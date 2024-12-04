@@ -5,7 +5,7 @@ import pandas as pd
 
 
 def main() -> None:
-    """Find the sum of the differences between two sorted columns."""
+    """Find the similarity score."""
     file: Path = parse_input()
     data: pd.DataFrame = pd.read_csv(file.as_posix(), sep=r"\s+", header=None)
     data.columns = ["left", "right"]
