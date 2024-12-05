@@ -1,4 +1,8 @@
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Generator
 
 MAX_SAFE_CHANGE: int = 3
 MIN_SAFE_CHANGE: int = 1
@@ -15,6 +19,17 @@ def main() -> None:
 
         if is_safe(levels):
             safe += 1
+            continue
+
+        # If unsafe, create a generator of possible readings with one value removed
+        candidates: Generator = (
+            levels[:i] + levels[i + 1 :] for i in range(len(levels))
+        )
+        for candidate in candidates:
+            if is_safe(candidate):
+                safe += 1
+                break
+
     print("Safe: ", safe)
 
 
