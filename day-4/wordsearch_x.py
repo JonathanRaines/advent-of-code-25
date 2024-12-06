@@ -2,7 +2,6 @@ import argparse
 import re
 from pathlib import Path
 
-SEARCH: str = "XMAS"
 ANY: str = r"(?>.|\n)"  # Non capturing group that matches any character across newlines
 
 

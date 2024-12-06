@@ -2,11 +2,11 @@ import argparse
 import re
 from pathlib import Path
 
-SEARCH: str = "XMAS"
 ANY: str = r"(?>.|\n)"  # Non capturing group that matches any character across newlines
 
 
 def main() -> None:
+    """Do word search."""
     search_word, grid_path = get_input()
     with Path(grid_path).open("r") as f:
         grid = f.read()
@@ -19,6 +19,7 @@ def main() -> None:
 
 
 def get_input() -> tuple[str, str]:
+    """Get input from command line."""
     parser = argparse.ArgumentParser()
     parser.add_argument("word", type=str, help="Word to search for")
     parser.add_argument("grid", type=str, help="Path to word search grid .txt file")
@@ -27,6 +28,10 @@ def get_input() -> tuple[str, str]:
 
 
 def make_pattern(word: str, grid_size: int) -> str:
+    """Generate regex patterns for horizontal, vertical, and diagonal matches.
+
+    Patterns allow for overlapping matches.
+    """
     patterns: list[str] = [
         # Horizontal forward and backward
         word,
