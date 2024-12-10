@@ -1,6 +1,6 @@
 import argparse
 from dataclasses import dataclass
-from enum import IntEnum, StrEnum
+from enum import IntEnum
 from pathlib import Path
 from typing import NamedTuple, Self
 
@@ -8,12 +8,26 @@ import numpy as np
 from numpy.typing import NDArray
 
 GUARD_SYMBOLS: str = "^>v<"
+STATE_SYMBOLS: str = ".#"
+TRAIL_SYMBOLS: str = "|-+O"
 
 
-class State(StrEnum):
-    FLOOR = "."
-    OBSTACLE = "#"
-    GUARD = "^"  # TODO directions
+class State(IntEnum):
+    FLOOR = 0
+    OBSTACLE = 1
+
+    def to_str(self) -> str:
+        return STATE_SYMBOLS[self.value]
+
+
+class TrailState(IntEnum):
+    VERTICAL = 0
+    HORIZONTAL = 1
+    Corner = 2
+    ADDED_OBSTACLE = 3
+
+    def to_str(self) -> str:
+        return TRAIL_SYMBOLS[self.value]
 
 
 class Layer(IntEnum):
@@ -47,6 +61,9 @@ class Env:
     obstacles: Coordinate
     guard: Guard
     trail: NDArray[np.bool]
+
+    def __post_init__(self) -> None:
+        self.trail_state: NDArray[np.int8] = np.zeros_like(self.trail, dtype=np.int8)
 
     def step(self) -> bool:
         done = False
@@ -88,6 +105,7 @@ class Env:
             else Coordinate(g_static, next_inline)
         )
 
+        # Set the trail to everything between the guard and the next obstacle
         if vertical:
             slice = sorted([g_new.row, self.guard.pos.row])
             self.trail[
@@ -97,6 +115,25 @@ class Env:
         else:
             slice = sorted([self.guard.pos.col, g_new.col])
             self.trail[self.guard.pos.row, slice[0] : slice[1]] = True
+
+        # Keep track of what status the trail is in. Use for fining loops
+        padded = np.pad(self.trail, (1, 1), mode="edge")
+
+        corner = (
+            padded[2:, 1:-1].astype(int)
+            + padded[:-2, 1:-1].astype(int)
+            + padded[1:-1, 2:].astype(int)
+            + padded[1:-1, :-2].astype(int)
+            >= 2
+        ).astype(bool)
+        self.trail_state[np.logical_and(corner, self.trail)] = TrailState.Corner
+        vertical = np.logical_and(padded[2:, :], padded[:-2, :])[:, 1:-1]
+        self.trail_state[np.logical_and(vertical, self.trail)] = TrailState.VERTICAL
+        horizontal = np.logical_and(padded[:, 2:].astype(int), padded[:, :-2])[1:-1, :]
+        self.trail_state[np.logical_and(horizontal, self.trail)] = TrailState.HORIZONTAL
+
+        # Find loops
+        parallel_right = 
 
         if done:
             self.guard = Guard(
@@ -114,24 +151,12 @@ class Env:
         return False
 
     def render(self) -> None:
-        map = np.full_like(self.trail, State.FLOOR, dtype=str)
-        map[self.obstacles] = State.OBSTACLE
+        map = np.full_like(self.trail, State.FLOOR.to_str(), dtype=str)
+        map[self.obstacles] = State.OBSTACLE.to_str()
 
-        padded = np.pad(self.trail, (1, 1), mode="edge")
-
-        map[self.trail] = "x"
-        corner = (
-            padded[2:, 1:-1].astype(int)
-            + padded[:-2, 1:-1].astype(int)
-            + padded[1:-1, 2:].astype(int)
-            + padded[1:-1, :-2].astype(int)
-            >= 2
-        ).astype(bool)
-        map[np.logical_and(corner, self.trail)] = "+"
-        vertical = np.logical_and(padded[2:, :], padded[:-2, :])[:, 1:-1]
-        map[np.logical_and(vertical, self.trail)] = "|"
-        horizontal = np.logical_and(padded[:, 2:].astype(int), padded[:, :-2])[1:-1, :]
-        map[np.logical_and(horizontal, self.trail)] = "-"
+        map[self.trail] = np.vectorize(lambda x: TrailState(x).to_str())(
+            self.trail_state,
+        )[self.trail]
 
         guard_symbol = GUARD_SYMBOLS[self.guard.facing]
         map[self.guard.pos] = guard_symbol
@@ -172,7 +197,7 @@ def parse_grid(
 ) -> Env:
     lines: list[str] = grid_text.splitlines()
     text_array = np.array([list(line) for line in lines])
-    obstacles: tuple[NDArray] = np.where(text_array == State.OBSTACLE)
+    obstacles: tuple[NDArray] = np.where(text_array == State.OBSTACLE.to_str())
     guard: tuple[NDArray] = np.where(
         np.vectorize(lambda x: x in GUARD_SYMBOLS)(text_array),
     )

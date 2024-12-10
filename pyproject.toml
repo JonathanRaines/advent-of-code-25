@@ -9,6 +9,7 @@ dependencies = [
     "networks",
     "networkx>=3.4.2",
     "pandas>=2.2.3",
+    "tqdm>=4.67.1",
 ]
 
 [tool.ruff]
