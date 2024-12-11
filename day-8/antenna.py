@@ -12,6 +12,7 @@ def main() -> None:
         data: str = f.read()
 
     shape = (len(data.splitlines()), len(data.splitlines()[0]))
+    diag = np.linalg.norm(shape)
 
     # Freq: Locations. Locations are NDArrays of shape (N, 2) [[x1, y1], [x2, y2], ...]
     antennae_locations: dict[str, NDArray] = parse_antenna_layout(data)
@@ -20,12 +21,27 @@ def main() -> None:
     for char, coords in antennae_locations.items():
         antenna_pairs = list(itertools.combinations(range(len(coords)), 2))
         deltas = [coords[pair[1]] - coords[pair[0]] for pair in antenna_pairs]
-        minor_node_coords = [
-            coords[pair[0]] - deltas[i] for i, pair in enumerate(antenna_pairs)
+        wavelengths = [np.linalg.norm(delta) for delta in deltas]
+        wavelenghts_needed = [
+            np.ceil(diag / wavelength).astype(int) for wavelength in wavelengths
         ]
-        major_node_coords = [
-            coords[pair[1]] + deltas[i] for i, pair in enumerate(antenna_pairs)
-        ]
+        minor_node_coords = []
+        major_node_coords = []
+        for i, pair in enumerate(antenna_pairs):
+            minor_node_coords.extend(
+                [
+                    coords[pair[0]] - (deltas[i] * j)
+                    for j in range(wavelenghts_needed[i])
+                ],
+            )
+            major_node_coords.extend(
+                [
+                    coords[pair[1]] + (deltas[i] * j)
+                    for j in range(wavelenghts_needed[i])
+                ],
+            )
+            continue
+
         node_coords.extend(minor_node_coords + major_node_coords)
 
     node_array = np.array(node_coords)
