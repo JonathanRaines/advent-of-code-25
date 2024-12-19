@@ -7,6 +7,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 PEAK_HEIGHT: int = 9
+INDEX = "\033[90m"
 CURRENT = "\033[47m"
 FORK = "\033[44m"
 MEET_UP = "\033[43m"
@@ -25,6 +26,9 @@ class Step(NamedTuple):
     is_meet_up: bool
 
 
+Trail = list[Step]
+
+
 def main() -> None:
     file, visualise = get_input()
     with file.open() as f:
@@ -34,23 +38,31 @@ def main() -> None:
     topography: NDArray[np.int8] = parse_topography(contents)
 
     trailhead_coords: NDArray[np.intp] = np.argwhere(topography == 0)
-    trailheads: dict[Coord, set[Coord]] = {
-        tuple(coord): set() for coord in trailhead_coords
+
+    # Key; coord of trailhead, Value: dict peaks=set of peaks reachable from trailhead,
+    # trails=set of trails
+    trailheads: dict[Coord, dict[set[Coord], set[Trail]]] = {
+        tuple(coord): {"peaks": set(), "trails": set()} for coord in trailhead_coords
     }
 
-    # Key: coord of meet up, Value: set of reachable peak coords
-    meet_ups: dict[Coord, set] = defaultdict(set)
+    # A meet up is the opposite of a fork, where two trails merge together.
+    # Same format as trailheads
+    meet_ups: dict[Coord, dict[set[Coord], set[Trail]]] = defaultdict(
+        lambda: {"peaks": set(), "trails": set()},
+    )
 
-    for trailhead, peaks in trailheads.items():
+    for trailhead, trailhead_info in trailheads.items():
         # Initialise a queue of coordinates to explore
         coords_to_explore = [trailhead]
 
         # Keep track of the trail. Needed for updating meet_ups when reaching a peak.
-        trail: list[Step] = []
+        trail: Trail = []
 
         while coords_to_explore:
             coord: Coord = Coord(coords_to_explore.pop())
+
             height = topography[coord]
+
             # Height is a proxy for how far along the trail we are
             # Can use to trim the trail back to what it was at this coord
             if len(trail) > height:
@@ -60,13 +72,32 @@ def main() -> None:
 
             # If we've been here before, we've already explored all options
             if coord in meet_ups:
-                peaks_reachable: set[Coord] = meet_ups[coord]
-                peaks.update(peaks_reachable)
+                peaks_reachable: set[Coord] = meet_ups[coord]["peaks"]
+                trail_ends: set[Trail] = meet_ups[coord]["trails"]
+                trailhead_info["peaks"].update(peaks_reachable)
+
+                # Need to backpropagate the trails from the meet_ups in the current trail.
+                # Extend the trail ends from the meet up back to the start of the
+                # current trail. Will then trim appropriately for each meet up.
+                trails_from_trailhead = {
+                    (*tuple(step.coord for step in trail), coord, *trail_end)
+                    for trail_end in trail_ends
+                }
+                trailhead_info["trails"].update(trails_from_trailhead)
                 meet_up_coords_in_trail = (
                     step.coord for step in trail if step.is_meet_up
                 )
                 for meet_up_coord in meet_up_coords_in_trail:
-                    meet_ups[meet_up_coord].update(peaks_reachable)
+                    meet_ups[meet_up_coord]["peaks"].update(peaks_reachable)
+                    trails_from_meet_up = {
+                        tuple(
+                            coord
+                            for coord in _trail
+                            if topography[coord] > topography[meet_up_coord]
+                        )
+                        for _trail in trails_from_trailhead
+                    }
+                    meet_ups[meet_up_coord]["trails"].update(trails_from_meet_up)
                 continue
 
             # Reaching a peak
@@ -78,14 +109,22 @@ def main() -> None:
                         is_fork=False,
                     ),
                 )
-                peaks.add(coord)
+                trailhead_info["peaks"].add(coord)
+                trailhead_info["trails"].add(tuple(step.coord for step in trail))
 
                 # Add this peak to all meet_ups along the trail
                 meet_up_coords_in_trail = (
                     step.coord for step in trail if step.is_meet_up
                 )
                 for meet_up_coord in meet_up_coords_in_trail:
-                    meet_ups[meet_up_coord].add(coord)
+                    meet_ups[meet_up_coord]["peaks"].add(coord)
+                    meet_ups[meet_up_coord]["trails"].add(
+                        tuple(
+                            step.coord
+                            for step in trail
+                            if topography[step.coord] > topography[meet_up_coord]
+                        ),
+                    )
                 continue
 
             # Explore
@@ -119,11 +158,14 @@ def main() -> None:
             )
 
             coords_to_explore.extend(options)
-
+    for trailhead, trailhead_info in trailheads.items():
+        print(tuple(int(c) for c in trailhead), len(trailhead_info["trails"]))
     print(
         "Trails: ",
-        sum(len(v) for v in trailheads.values()),
-    )  # 755 too low, 880 too high
+        sum(len(v["peaks"]) for v in trailheads.values()),
+        "| Trail rating sum: ",
+        sum(len(v["trails"]) for v in trailheads.values()),
+    )
 
 
 def get_input() -> tuple[Path, bool]:
@@ -158,13 +200,20 @@ def print_map(
     coord: Coord,
 ) -> None:
     """Print the topography with the current location highlighted."""
-    for _ in range(topography.shape[0]):
+    for _ in range(topography.shape[0] + 1):
         delete_line()
 
     forks = {step.coord for step in trail if step.is_fork}
     meet_ups = {step.coord for step in trail if step.is_meet_up}
     trail = {step.coord for step in trail}
+
+    # Col indexes
+    print("  ", end="")
+    for i in range(topography.shape[0]):
+        print(f"{INDEX} {i}{ENDC}", end="")
+    print()
     for i_row, row in enumerate(topography):
+        print(f"{INDEX} {i_row}{ENDC}", end="")
         for i_col, col in enumerate(row):
             if (i_row, i_col) == coord:
                 print(f"{CURRENT} {col!s}{ENDC}", end="")
